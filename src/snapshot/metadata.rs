@@ -265,7 +265,9 @@ pub enum InstigatingSource {
         #[serde(serialize_with = "path_serializer::serialize_absolute")]
         path: PathBuf,
         name: String,
-        node: ProjectNode,
+        // Boxed to keep the enum small; this variant is much larger than
+        // `Path` and instances of this type are cloned frequently.
+        node: Box<ProjectNode>,
         parent_class: Option<String>,
     },
 }

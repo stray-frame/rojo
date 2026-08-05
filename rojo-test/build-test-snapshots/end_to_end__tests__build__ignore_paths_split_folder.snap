@@ -1,0 +1,74 @@
+---
+source: tests/tests/build.rs
+expression: contents
+---
+<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">ignore_paths_split_folder</string>
+    </Properties>
+    <Item class="Folder" referent="1">
+      <Properties>
+        <string name="Name">Client</string>
+      </Properties>
+      <Item class="Folder" referent="2">
+        <Properties>
+          <string name="Name">client</string>
+        </Properties>
+        <Item class="ModuleScript" referent="3">
+          <Properties>
+            <string name="Name">a</string>
+            <string name="Source"><![CDATA[return "client module"
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="LocalScript" referent="4">
+        <Properties>
+          <string name="Name">foo</string>
+          <string name="Source"><![CDATA[print("client script")
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
+          <string name="Name">shared</string>
+          <string name="Source"><![CDATA[return "shared"
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="Script" referent="7">
+        <Properties>
+          <string name="Name">bar</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[print("server script")
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Folder" referent="8">
+        <Properties>
+          <string name="Name">server</string>
+        </Properties>
+        <Item class="ModuleScript" referent="9">
+          <Properties>
+            <string name="Name">b</string>
+            <string name="Source"><![CDATA[return "server module"
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="ModuleScript" referent="10">
+        <Properties>
+          <string name="Name">shared</string>
+          <string name="Source"><![CDATA[return "shared"
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

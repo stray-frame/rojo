@@ -1,0 +1,7 @@
+{
+  "name": "ignore_paths_prune_empty",
+  "tree": {
+    "$path": "src",
+    "$ignorePaths": ["**/server/**"]
+  }
+}

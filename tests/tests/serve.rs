@@ -277,6 +277,57 @@ fn move_folder_of_stuff() {
 }
 
 #[test]
+fn split_folder() {
+    run_serve_test("split_folder", |session, mut redactions| {
+        let info = session.get_api_rojo().unwrap();
+        let root_id = info.root_instance_id;
+
+        assert_yaml_snapshot!("split_folder_info", redactions.redacted_yaml(info));
+
+        let read_response = session.get_api_read(root_id).unwrap();
+        with_settings!({ sort_maps => true }, {
+            assert_yaml_snapshot!(
+                "split_folder_all",
+                read_response.intern_and_redact(&mut redactions, root_id)
+            );
+        });
+
+        // A new client-only file should only be added under the node that
+        // does not ignore it; the other node's re-snapshot produces an empty
+        // patch, so exactly one message is expected.
+        fs::write(session.path().join("src/new.client.lua"), "-- new client").unwrap();
+
+        let socket_packet = session
+            .get_api_socket_packet(SocketPacketType::Messages, 0)
+            .unwrap();
+        assert_yaml_snapshot!(
+            "split_folder_subscribe",
+            socket_packet.intern_and_redact(&mut redactions, ())
+        );
+
+        // Editing a file that both nodes include should update it in both
+        // places.
+        fs::write(session.path().join("src/shared.lua"), "return \"updated\"").unwrap();
+
+        let socket_packet = session
+            .get_api_socket_packet(SocketPacketType::Messages, 1)
+            .unwrap();
+        assert_yaml_snapshot!(
+            "split_folder_subscribe-2",
+            socket_packet.intern_and_redact(&mut redactions, ())
+        );
+
+        let read_response = session.get_api_read(root_id).unwrap();
+        with_settings!({ sort_maps => true }, {
+            assert_yaml_snapshot!(
+                "split_folder_all-2",
+                read_response.intern_and_redact(&mut redactions, root_id)
+            );
+        });
+    });
+}
+
+#[test]
 fn empty_json_model() {
     run_serve_test("empty_json_model", |session, mut redactions| {
         let info = session.get_api_rojo().unwrap();

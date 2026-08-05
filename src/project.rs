@@ -429,6 +429,19 @@ pub struct ProjectNode {
     /// spreadsheets (`.csv`).
     #[serde(rename = "$path", skip_serializing_if = "Option::is_none")]
     pub path: Option<PathNode>,
+
+    /// Node-scoped ignore globs, evaluated relative to the resolved `$path`
+    /// target. Files matched by these globs are excluded from this node only,
+    /// which allows multiple nodes to point at the same directory with
+    /// complementary filters, splitting one folder across several places in
+    /// the instance tree. Supports gitignore-style `!` negation like
+    /// `globIgnorePaths`.
+    #[serde(
+        rename = "$ignorePaths",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub ignore_paths: Vec<IgnorableGlob>,
 }
 
 impl ProjectNode {
@@ -549,6 +562,59 @@ mod test {
 
         let serialized = serde_json::to_string(&project_node).unwrap();
         assert_eq!(serialized, r#"{"$path":"../src"}"#);
+    }
+
+    #[test]
+    fn project_node_ignore_paths() {
+        let project_node: ProjectNode = json::from_str(
+            r#"{
+                "$path": "src",
+                "$ignorePaths": ["**/*.server.lua", "!keep.server.lua"]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(project_node.ignore_paths.len(), 2);
+        assert!(!project_node.ignore_paths[0].is_negation());
+        assert!(project_node.ignore_paths[1].is_negation());
+    }
+
+    #[test]
+    fn project_node_ignore_paths_round_trip() {
+        let project_node: ProjectNode = json::from_str(
+            r#"{
+                "$path": "src",
+                "$ignorePaths": ["server/**", "!server/keep.lua"]
+            }"#,
+        )
+        .unwrap();
+
+        let serialized = serde_json::to_string(&project_node).unwrap();
+        assert_eq!(
+            serialized,
+            r#"{"$path":"src","$ignorePaths":["server/**","!server/keep.lua"]}"#
+        );
+    }
+
+    #[test]
+    fn project_node_ignore_paths_omitted_when_empty() {
+        let project_node: ProjectNode = json::from_str(r#"{ "$path": "src" }"#).unwrap();
+
+        assert!(project_node.ignore_paths.is_empty());
+        let serialized = serde_json::to_string(&project_node).unwrap();
+        assert_eq!(serialized, r#"{"$path":"src"}"#);
+    }
+
+    #[test]
+    fn project_node_ignore_paths_rejects_non_array() {
+        let result: Result<ProjectNode, _> = json::from_str(
+            r#"{
+                "$path": "src",
+                "$ignorePaths": "not-an-array"
+            }"#,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

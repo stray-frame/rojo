@@ -1,0 +1,182 @@
+---
+source: src/snapshot_middleware/project.rs
+expression: instance_snapshot
+---
+snapshot_id: "00000000000000000000000000000000"
+metadata:
+  ignore_unknown_instances: true
+  instigating_source:
+    Path: /foo/default.project.json
+  relevant_paths:
+    - /foo/default.project.json
+  context:
+    emit_legacy_scripts: true
+  specified_id: ~
+  middleware: ~
+  schema: ~
+name: split-project
+class_name: Folder
+properties: {}
+children:
+  - snapshot_id: "00000000000000000000000000000000"
+    metadata:
+      ignore_unknown_instances: false
+      instigating_source:
+        ProjectNode:
+          path: /foo/default.project.json
+          name: Client
+          node:
+            $ignorePaths:
+              - "*.server.lua"
+            $path: src
+          parent_class: Folder
+      relevant_paths:
+        - /foo/src
+        - /foo/src/init.lua
+        - /foo/src/init.luau
+        - /foo/src/init.server.lua
+        - /foo/src/init.server.luau
+        - /foo/src/init.client.lua
+        - /foo/src/init.client.luau
+        - /foo/src/init.plugin.lua
+        - /foo/src/init.plugin.luau
+        - /foo/src/init.csv
+        - /foo/src/init.meta.json
+        - /foo/src/init.meta.jsonc
+      context:
+        emit_legacy_scripts: true
+      specified_id: ~
+      middleware: dir
+      schema: ~
+    name: Client
+    class_name: Folder
+    properties: {}
+    children:
+      - snapshot_id: "00000000000000000000000000000000"
+        metadata:
+          ignore_unknown_instances: false
+          instigating_source:
+            Path: /foo/src/foo.client.lua
+          relevant_paths:
+            - /foo/src/foo.client.lua
+            - /foo/src/foo.meta.json
+            - /foo/src/foo.meta.jsonc
+          context:
+            path_ignore_rules:
+              - base_path: /foo/src
+                glob: "*.server.lua"
+            emit_legacy_scripts: true
+          specified_id: ~
+          middleware: clientScript
+          schema: ~
+        name: foo
+        class_name: LocalScript
+        properties:
+          Source:
+            String: "-- client"
+        children: []
+      - snapshot_id: "00000000000000000000000000000000"
+        metadata:
+          ignore_unknown_instances: false
+          instigating_source:
+            Path: /foo/src/shared.lua
+          relevant_paths:
+            - /foo/src/shared.lua
+            - /foo/src/shared.meta.json
+            - /foo/src/shared.meta.jsonc
+          context:
+            path_ignore_rules:
+              - base_path: /foo/src
+                glob: "*.server.lua"
+            emit_legacy_scripts: true
+          specified_id: ~
+          middleware: moduleScript
+          schema: ~
+        name: shared
+        class_name: ModuleScript
+        properties:
+          Source:
+            String: "-- shared"
+        children: []
+  - snapshot_id: "00000000000000000000000000000000"
+    metadata:
+      ignore_unknown_instances: false
+      instigating_source:
+        ProjectNode:
+          path: /foo/default.project.json
+          name: Server
+          node:
+            $ignorePaths:
+              - "*.client.lua"
+            $path: src
+          parent_class: Folder
+      relevant_paths:
+        - /foo/src
+        - /foo/src/init.lua
+        - /foo/src/init.luau
+        - /foo/src/init.server.lua
+        - /foo/src/init.server.luau
+        - /foo/src/init.client.lua
+        - /foo/src/init.client.luau
+        - /foo/src/init.plugin.lua
+        - /foo/src/init.plugin.luau
+        - /foo/src/init.csv
+        - /foo/src/init.meta.json
+        - /foo/src/init.meta.jsonc
+      context:
+        emit_legacy_scripts: true
+      specified_id: ~
+      middleware: dir
+      schema: ~
+    name: Server
+    class_name: Folder
+    properties: {}
+    children:
+      - snapshot_id: "00000000000000000000000000000000"
+        metadata:
+          ignore_unknown_instances: false
+          instigating_source:
+            Path: /foo/src/bar.server.lua
+          relevant_paths:
+            - /foo/src/bar.server.lua
+            - /foo/src/bar.meta.json
+            - /foo/src/bar.meta.jsonc
+          context:
+            path_ignore_rules:
+              - base_path: /foo/src
+                glob: "*.client.lua"
+            emit_legacy_scripts: true
+          specified_id: ~
+          middleware: serverScript
+          schema: ~
+        name: bar
+        class_name: Script
+        properties:
+          RunContext:
+            Enum: 0
+          Source:
+            String: "-- server"
+        children: []
+      - snapshot_id: "00000000000000000000000000000000"
+        metadata:
+          ignore_unknown_instances: false
+          instigating_source:
+            Path: /foo/src/shared.lua
+          relevant_paths:
+            - /foo/src/shared.lua
+            - /foo/src/shared.meta.json
+            - /foo/src/shared.meta.jsonc
+          context:
+            path_ignore_rules:
+              - base_path: /foo/src
+                glob: "*.client.lua"
+            emit_legacy_scripts: true
+          specified_id: ~
+          middleware: moduleScript
+          schema: ~
+        name: shared
+        class_name: ModuleScript
+        properties:
+          Source:
+            String: "-- shared"
+        children: []

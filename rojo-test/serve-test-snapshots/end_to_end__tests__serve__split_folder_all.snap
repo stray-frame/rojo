@@ -1,0 +1,86 @@
+---
+source: tests/tests/serve.rs
+expression: "read_response.intern_and_redact(&mut redactions, root_id)"
+---
+instances:
+  id-2:
+    Children:
+      - id-3
+      - id-6
+    ClassName: Folder
+    Id: id-2
+    Metadata:
+      ignoreUnknownInstances: true
+    Name: split_folder
+    Parent: "00000000000000000000000000000000"
+    Properties: {}
+  id-3:
+    Children:
+      - id-4
+      - id-5
+    ClassName: Folder
+    Id: id-3
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: Client
+    Parent: id-2
+    Properties: {}
+  id-4:
+    Children: []
+    ClassName: LocalScript
+    Id: id-4
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: foo
+    Parent: id-3
+    Properties:
+      Source:
+        String: "print(\"client script\")\n"
+  id-5:
+    Children: []
+    ClassName: ModuleScript
+    Id: id-5
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: shared
+    Parent: id-3
+    Properties:
+      Source:
+        String: "return \"shared\"\n"
+  id-6:
+    Children:
+      - id-7
+      - id-8
+    ClassName: Folder
+    Id: id-6
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: Server
+    Parent: id-2
+    Properties: {}
+  id-7:
+    Children: []
+    ClassName: Script
+    Id: id-7
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: bar
+    Parent: id-6
+    Properties:
+      RunContext:
+        Enum: 0
+      Source:
+        String: "print(\"server script\")\n"
+  id-8:
+    Children: []
+    ClassName: ModuleScript
+    Id: id-8
+    Metadata:
+      ignoreUnknownInstances: false
+    Name: shared
+    Parent: id-6
+    Properties:
+      Source:
+        String: "return \"shared\"\n"
+messageCursor: 0
+sessionId: id-1

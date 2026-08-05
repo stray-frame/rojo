@@ -117,7 +117,23 @@ pub fn snapshot_project_node(
             Cow::Borrowed(path)
         };
 
-        if let Some(snapshot) = snapshot_from_vfs(context, vfs, &full_path)? {
+        // Node-scoped ignore rules are based on the node's resolved $path
+        // target so that they only apply within this node's subtree, even
+        // when another node points at the same directory.
+        let node_context = if node.ignore_paths.is_empty() {
+            Cow::Borrowed(context)
+        } else {
+            let mut node_context = context.clone();
+            node_context.add_path_ignore_rules(node.ignore_paths.iter().map(|glob| {
+                PathIgnoreRule {
+                    glob: glob.clone(),
+                    base_path: full_path.to_path_buf(),
+                }
+            }));
+            Cow::Owned(node_context)
+        };
+
+        if let Some(snapshot) = snapshot_from_vfs(&node_context, vfs, &full_path)? {
             class_name_from_path = Some(snapshot.class_name);
 
             // Properties from the snapshot are pulled in unchanged, and
@@ -137,7 +153,28 @@ pub fn snapshot_project_node(
             // Take the snapshot's metadata as-is, which will be mutated later
             // on.
             metadata = snapshot.metadata;
+
+            // This instance is re-snapshotted by re-running
+            // snapshot_project_node with its stored context, which would add
+            // the node-scoped rules again on every re-snapshot. Storing the
+            // un-augmented context keeps re-snapshots a fixed point; the rules
+            // are re-derived from the node each time.
+            if !node.ignore_paths.is_empty() {
+                metadata.context = context.clone();
+
+                // Filtering can leave directories with all of their contents
+                // excluded; syncing those as empty folders is never what the
+                // user wants from a split node.
+                prune_empty_folders(&mut children);
+            }
         }
+    } else if !node.ignore_paths.is_empty() {
+        log::warn!(
+            "$ignorePaths was set on \"{}\" in project file {}, but the node has no $path. \
+             It will be ignored.",
+            instance_name,
+            project_path.display()
+        );
     }
 
     let class_name_from_inference = infer_class_name(&name, parent_class);
@@ -297,7 +334,7 @@ pub fn snapshot_project_node(
     metadata.instigating_source = Some(InstigatingSource::ProjectNode {
         path: project_path.to_path_buf(),
         name: instance_name.to_string(),
-        node: node.clone(),
+        node: Box::new(node.clone()),
         parent_class: parent_class.map(|name| name.to_owned()),
     });
 
@@ -671,6 +708,22 @@ fn project_node_should_reserialize(
             }
         }
     }
+}
+
+/// Recursively removes plain Folder instances that have no children, bottom
+/// up, so directories emptied out by `$ignorePaths` filtering don't sync as
+/// empty folders. Folders that carry meaning beyond their contents — a
+/// changed class, properties, or an ID from `init.meta.json` — are kept.
+fn prune_empty_folders(children: &mut Vec<InstanceSnapshot>) {
+    children.retain_mut(|child| {
+        prune_empty_folders(&mut child.children);
+
+        child.metadata.middleware != Some(Middleware::Dir)
+            || child.class_name != ustr("Folder")
+            || !child.children.is_empty()
+            || !child.properties.is_empty()
+            || child.metadata.specified_id.is_some()
+    });
 }
 
 fn infer_class_name(name: &str, parent_class: Option<&str>) -> Option<Ustr> {
@@ -1143,5 +1196,187 @@ mod test {
         .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
+    }
+
+    #[test]
+    fn project_with_node_ignore_paths_split() {
+        let _ = env_logger::try_init();
+
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo",
+            VfsSnapshot::dir([
+                (
+                    "default.project.json",
+                    VfsSnapshot::file(
+                        r#"
+                    {
+                        "name": "split-project",
+                        "tree": {
+                            "$className": "Folder",
+                            "Client": {
+                                "$path": "src",
+                                "$ignorePaths": ["*.server.lua"]
+                            },
+                            "Server": {
+                                "$path": "src",
+                                "$ignorePaths": ["*.client.lua"]
+                            }
+                        }
+                    }
+                "#,
+                    ),
+                ),
+                (
+                    "src",
+                    VfsSnapshot::dir([
+                        ("shared.lua", VfsSnapshot::file("-- shared")),
+                        ("foo.client.lua", VfsSnapshot::file("-- client")),
+                        ("bar.server.lua", VfsSnapshot::file("-- server")),
+                    ]),
+                ),
+            ]),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+
+        let instance_snapshot = snapshot_project(
+            &InstanceContext::default(),
+            &vfs,
+            Path::new("/foo/default.project.json"),
+            "NOT_IN_SNAPSHOT",
+        )
+        .expect("snapshot error")
+        .expect("snapshot returned no instances");
+
+        // Property maps are hash maps keyed by interning order, which varies
+        // between runs; sort them so the snapshot is deterministic.
+        insta::with_settings!({ sort_maps => true }, {
+            insta::assert_yaml_snapshot!(instance_snapshot);
+        });
+    }
+
+    #[test]
+    fn node_ignore_paths_prunes_emptied_folders() {
+        let _ = env_logger::try_init();
+
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo",
+            VfsSnapshot::dir([
+                (
+                    "default.project.json",
+                    VfsSnapshot::file(
+                        r#"
+                    {
+                        "name": "prune-project",
+                        "tree": {
+                            "$path": "src",
+                            "$ignorePaths": ["**/server/**"]
+                        }
+                    }
+                "#,
+                    ),
+                ),
+                (
+                    "src",
+                    VfsSnapshot::dir([
+                        ("module.lua", VfsSnapshot::file("-- module")),
+                        (
+                            "server",
+                            VfsSnapshot::dir([("b.lua", VfsSnapshot::file("-- server"))]),
+                        ),
+                        // `nested` only contains a filtered folder, so pruning
+                        // must cascade bottom-up and remove `nested` too.
+                        (
+                            "nested",
+                            VfsSnapshot::dir([(
+                                "server",
+                                VfsSnapshot::dir([("c.lua", VfsSnapshot::file("-- server"))]),
+                            )]),
+                        ),
+                    ]),
+                ),
+            ]),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+
+        let instance_snapshot = snapshot_project(
+            &InstanceContext::default(),
+            &vfs,
+            Path::new("/foo/default.project.json"),
+            "NOT_IN_SNAPSHOT",
+        )
+        .expect("snapshot error")
+        .expect("snapshot returned no instances");
+
+        let child_names: Vec<&str> = instance_snapshot
+            .children
+            .iter()
+            .map(|child| child.name.as_ref())
+            .collect();
+        assert_eq!(child_names, vec!["module"]);
+    }
+
+    #[test]
+    fn node_ignore_paths_resnapshot_is_fixed_point() {
+        let _ = env_logger::try_init();
+
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo",
+            VfsSnapshot::dir([
+                ("default.project.json", VfsSnapshot::file("{}")),
+                (
+                    "src",
+                    VfsSnapshot::dir([
+                        ("shared.lua", VfsSnapshot::file("-- shared")),
+                        ("bar.server.lua", VfsSnapshot::file("-- server")),
+                    ]),
+                ),
+            ]),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+
+        let node: ProjectNode = serde_json::from_str(
+            r#"{
+                "$path": "src",
+                "$ignorePaths": ["*.server.lua"]
+            }"#,
+        )
+        .unwrap();
+
+        let first = snapshot_project_node(
+            &InstanceContext::default(),
+            Path::new("/foo/default.project.json"),
+            "Test",
+            &node,
+            &vfs,
+            None,
+        )
+        .expect("snapshot error")
+        .expect("snapshot returned no instances");
+
+        // Live sync re-snapshots project nodes by re-running
+        // snapshot_project_node with the context stored in the instance's
+        // metadata. The result must be identical, or every file change would
+        // grow the context and emit spurious metadata patches.
+        let second = snapshot_project_node(
+            &first.metadata.context,
+            Path::new("/foo/default.project.json"),
+            "Test",
+            &node,
+            &vfs,
+            None,
+        )
+        .expect("snapshot error")
+        .expect("snapshot returned no instances");
+
+        assert_eq!(first, second);
     }
 }

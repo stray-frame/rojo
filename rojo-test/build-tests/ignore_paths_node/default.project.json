@@ -1,0 +1,7 @@
+{
+  "name": "ignore_paths_node",
+  "tree": {
+    "$path": "src",
+    "$ignorePaths": ["**/*.spec.lua", "!keep.spec.lua"]
+  }
+}
