@@ -1322,6 +1322,68 @@ mod test {
     }
 
     #[test]
+    fn ignored_init_file_demotes_dir_to_folder() {
+        let _ = env_logger::try_init();
+
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo",
+            VfsSnapshot::dir([
+                (
+                    "default.project.json",
+                    VfsSnapshot::file(
+                        r#"
+                    {
+                        "name": "demote-project",
+                        "tree": {
+                            "$path": "src",
+                            "$ignorePaths": ["**/*.*", "!**/*Server*.lua"]
+                        }
+                    }
+                "#,
+                    ),
+                ),
+                (
+                    "src",
+                    VfsSnapshot::dir([
+                        ("ModuleServer.lua", VfsSnapshot::file("-- server")),
+                        // `lights` has an init.lua, which would normally
+                        // promote it to a ModuleScript. Since the init file is
+                        // ignored, the directory must fall back to a plain
+                        // folder, which is then pruned for being empty.
+                        (
+                            "lights",
+                            VfsSnapshot::dir([
+                                ("init.lua", VfsSnapshot::file("-- init")),
+                                ("pantry.lua", VfsSnapshot::file("-- pantry")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+
+        let instance_snapshot = snapshot_project(
+            &InstanceContext::default(),
+            &vfs,
+            Path::new("/foo/default.project.json"),
+            "NOT_IN_SNAPSHOT",
+        )
+        .expect("snapshot error")
+        .expect("snapshot returned no instances");
+
+        let child_names: Vec<&str> = instance_snapshot
+            .children
+            .iter()
+            .map(|child| child.name.as_ref())
+            .collect();
+        assert_eq!(child_names, vec!["ModuleServer"]);
+    }
+
+    #[test]
     fn node_ignore_paths_resnapshot_is_fixed_point() {
         let _ = env_logger::try_init();
 

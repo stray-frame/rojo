@@ -34,7 +34,7 @@ use crate::{
     syncback::{SyncbackReturn, SyncbackSnapshot},
 };
 use crate::{
-    snapshot::{InstanceContext, InstanceSnapshot, SyncRule},
+    snapshot::{is_path_ignored, InstanceContext, InstanceSnapshot, SyncRule},
     syncback::validate_file_name,
 };
 
@@ -80,6 +80,11 @@ pub fn snapshot_from_vfs(
         // `default.project.json` as an `init` path.
         match middleware {
             Middleware::Dir => middleware.snapshot(context, vfs, path, dir_name),
+            // An ignored init file shouldn't promote its directory into a
+            // script; treat the directory as a plain folder instead.
+            _ if is_path_ignored(&context.path_ignore_rules, &init_path) => {
+                Middleware::Dir.snapshot(context, vfs, path, dir_name)
+            }
             _ => middleware.snapshot(context, vfs, &init_path, dir_name),
         }
     } else {
