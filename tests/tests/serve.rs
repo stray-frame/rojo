@@ -1,4 +1,6 @@
 use std::fs;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use insta::{assert_snapshot, assert_yaml_snapshot, with_settings};
 use rbx_dom_weak::types::Ref;
@@ -10,7 +12,18 @@ use crate::rojo_test::{
     serve_util::{deserialize_msgpack, run_serve_test, serialize_to_xml_model},
 };
 
-use librojo::web_api::{SerializeResponse, SocketPacketType};
+use librojo::web_api::{ReadResponse, SerializeResponse, SocketPacketType};
+
+/// Finds the child of `parent` with the given name in a read response.
+fn child_named(response: &ReadResponse<'_>, parent: Ref, name: &str) -> Option<Ref> {
+    let parent = response.instances.get(&parent)?;
+
+    parent
+        .children
+        .iter()
+        .copied()
+        .find(|id| response.instances.get(id).map(|child| child.name.as_ref()) == Some(name))
+}
 
 #[test]
 fn rejects_dns_rebinding_requests() {
@@ -324,6 +337,75 @@ fn split_folder() {
                 read_response.intern_and_redact(&mut redactions, root_id)
             );
         });
+    });
+}
+
+/// A directory holding no files for one of two nodes that share a `$path` has
+/// its folder pruned out of that node's subtree. Adding the first file for that
+/// node still has to sync, which means the change processor cannot stop at the
+/// other node's folder when it walks up looking for affected instances.
+///
+/// Regression test: `src/client_only/late.server.lua` used to never appear
+/// under `Server` until the serve session was restarted.
+#[test]
+fn split_folder_pruned() {
+    run_serve_test("split_folder_pruned", |session, _redactions| {
+        let info = session.get_api_rojo().unwrap();
+        let root_id = info.root_instance_id;
+
+        let response = session.get_api_read(root_id).unwrap();
+        let client = child_named(&response, root_id, "Client").expect("Client node");
+        let server = child_named(&response, root_id, "Server").expect("Server node");
+
+        // `both` has a file for each node, so it is present in both subtrees.
+        assert!(child_named(&response, client, "both").is_some());
+        assert!(child_named(&response, server, "both").is_some());
+
+        // `client_only` has nothing the server node syncs, so it is pruned out
+        // of the server subtree to begin with.
+        assert!(child_named(&response, client, "client_only").is_some());
+        assert!(
+            child_named(&response, server, "client_only").is_none(),
+            "client_only should start out pruned from the Server node"
+        );
+
+        // Adding the first server file to that directory has to bring the
+        // folder back under the server node.
+        fs::write(
+            session.path().join("src/client_only/late.server.lua"),
+            "-- late server",
+        )
+        .unwrap();
+
+        // The change is applied asynchronously. Poll rather than waiting on a
+        // message: when this regresses no patch is produced at all, so blocking
+        // on one would hang the suite instead of failing it.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let response = loop {
+            let response = session.get_api_read(root_id).unwrap();
+            let server = child_named(&response, root_id, "Server").expect("Server node");
+            let synced = child_named(&response, server, "client_only")
+                .and_then(|dir| child_named(&response, dir, "late"))
+                .is_some();
+
+            if synced {
+                break response;
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "Server/client_only/late never appeared: the subtree that had \
+                 been pruned as empty was not re-snapshotted after the new file \
+                 was added"
+            );
+
+            thread::sleep(Duration::from_millis(100));
+        };
+
+        // The client node ignores the new file, so it stays out of that subtree.
+        let client = child_named(&response, root_id, "Client").expect("Client node");
+        let client_dir = child_named(&response, client, "client_only").expect("client_only");
+        assert!(child_named(&response, client_dir, "late").is_none());
     });
 }
 

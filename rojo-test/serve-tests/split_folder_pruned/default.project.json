@@ -1,0 +1,14 @@
+{
+  "name": "split_folder_pruned",
+  "tree": {
+    "$className": "Folder",
+    "Client": {
+      "$path": "src",
+      "$ignorePaths": ["**/*.server.lua", "**/server"]
+    },
+    "Server": {
+      "$path": "src",
+      "$ignorePaths": ["**/*.client.lua", "**/client"]
+    }
+  }
+}
