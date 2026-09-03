@@ -116,35 +116,67 @@ struct JobThreadContext {
 impl JobThreadContext {
     /// Computes and applies patches to the DOM for a given file path.
     ///
-    /// This function finds the nearest ancestor to the given path that has associated instances
-    /// in the tree.
-    /// It then computes and applies changes for each affected instance ID and
-    /// returns a vector of applied patch sets.
+    /// A single path can be backed by instances in more than one place in the
+    /// tree: two project nodes may point at the same `$path` with different
+    /// `$ignorePaths`, so the same directory appears under several parents.
+    /// Each of those subtrees has to be re-snapshotted from the deepest
+    /// instance that covers the changed path.
+    ///
+    /// Walking up and stopping at the first path that has any instances is not
+    /// enough. `$ignorePaths` prunes directories whose contents are entirely
+    /// filtered out, so a subtree that does not contain the changed path yet
+    /// has no instance at the nearest ancestor. The walk then stops on some
+    /// other node's instance and that subtree never learns about the new file
+    /// -- which is why the first server-side file added to a previously
+    /// client-only directory did not sync until the session was restarted.
+    ///
+    /// Instead, keep walking up and collect every instance that is not already
+    /// covered by one we have collected. Once a level adds nothing new, every
+    /// level above it is covered too and we can stop.
     fn apply_patches(&self, path: PathBuf) -> Vec<AppliedPatchSet> {
         let mut tree = self.tree.lock().unwrap();
         let mut applied_patches = Vec::new();
 
-        // Find the nearest ancestor to this path that has
-        // associated instances in the tree. This helps make sure
-        // that we handle additions correctly, especially if we
-        // receive events for descendants of a large tree being
-        // created all at once.
-        let mut current_path = path.as_path();
-        let affected_ids = loop {
-            let ids = tree.get_ids_at_path(current_path);
+        let mut affected_ids: Vec<Ref> = Vec::new();
+        let mut current_path = Some(path.as_path());
 
-            log::trace!("Path {} affects IDs {:?}", current_path.display(), ids);
+        while let Some(search_path) = current_path {
+            let ids = tree.get_ids_at_path(search_path);
 
-            if !ids.is_empty() {
-                break ids.to_vec();
+            log::trace!("Path {} affects IDs {:?}", search_path.display(), ids);
+
+            // Re-snapshotting an instance covers its entire subtree, so only
+            // take IDs that are not already an ancestor of something collected.
+            let mut new_ids: Vec<Ref> = Vec::new();
+            for &candidate in ids {
+                let mut covered = false;
+
+                for &found in &affected_ids {
+                    if is_ancestor_of(&tree, candidate, found) {
+                        covered = true;
+                        break;
+                    }
+                }
+
+                if !covered {
+                    new_ids.push(candidate);
+                }
+            }
+
+            if new_ids.is_empty() {
+                // A level that is entirely covered means every level above it
+                // is covered as well, so there is nothing left to find.
+                if !ids.is_empty() && !affected_ids.is_empty() {
+                    log::trace!("All IDs at this path are already covered; stopping");
+                    break;
+                }
+            } else {
+                affected_ids.extend(new_ids);
             }
 
             log::trace!("Trying parent path...");
-            match current_path.parent() {
-                Some(parent) => current_path = parent,
-                None => break Vec::new(),
-            }
-        };
+            current_path = search_path.parent();
+        }
 
         for id in affected_ids {
             if let Some(patch) = compute_and_apply_changes(&mut tree, &self.vfs, id) {
@@ -292,6 +324,27 @@ impl JobThreadContext {
             self.message_queue.push_messages(&[applied_patch]);
         }
     }
+}
+
+/// Returns whether `ancestor` is `descendant` itself or one of its ancestors.
+///
+/// Used to tell whether an instance found further up the path chain would
+/// already be re-snapshotted as part of a subtree we have collected.
+fn is_ancestor_of(tree: &RojoTree, ancestor: Ref, descendant: Ref) -> bool {
+    let mut current = descendant;
+
+    while !current.is_none() {
+        if current == ancestor {
+            return true;
+        }
+
+        match tree.get_instance(current) {
+            Some(instance) => current = instance.parent(),
+            None => break,
+        }
+    }
+
+    false
 }
 
 fn compute_and_apply_changes(tree: &mut RojoTree, vfs: &Vfs, id: Ref) -> Option<AppliedPatchSet> {

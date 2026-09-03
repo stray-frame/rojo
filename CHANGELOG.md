@@ -36,6 +36,7 @@ Making a new release? Simply add the new header with the version and date undern
 * Fixed `rojo sourcemap --absolute` emitting verbatim (`\\?\`) paths on Windows, which broke require types in luau-lsp. ([#1290])
 * The plugin now disables the `Check for Updates` setting if you block access to `api.github.com`. ([#1297])
 * Added `$ignorePaths` to project tree nodes: node-scoped ignore globs evaluated relative to the node's `$path` target, with gitignore-style `!` negation. Multiple nodes can point at the same directory with complementary `$ignorePaths` to split one folder on disk across several places in the instance tree. Folders left empty by the filtering are pruned from the tree. ([#0000])
+* Fixed the first file added to a directory that a `$ignorePaths` node had pruned as empty not syncing until the session was restarted. The change processor stopped at the first ancestor path with instances, which for a pruned directory was another node's folder, so the node that should have received the file was never re-snapshotted. ([#0000])
 
 [#0000]: https://github.com/rojo-rbx/rojo/pull/0000
 [#1290]: https://github.com/rojo-rbx/rojo/pull/1290
